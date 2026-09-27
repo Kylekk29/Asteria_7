@@ -1,0 +1,1255 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ASTERIA-7 · 第一人稱太空飛行</title>
+<meta name="description" content="坐進虛構太空船 ASTERIA-7 的駕駛艙，在一個有海洋行星、熔岩行星、光環氣體巨星與冰封行星的恆星系中自由飛行，並以超空間跳躍無縫前往各個星球。three.js + anime.js。">
+<style>
+:root{
+  --cyan:#6ff4ff; --mag:#ff5ad9; --amber:#ffb347; --lime:#b9ff72; --red:#ff5a5a;
+  --ink:#e9f1ff; --dim:#8fa0c6; --panel:rgba(8,14,32,.55); --line:rgba(111,244,255,.28);
+  --mono:ui-monospace,"SF Mono","Cascadia Mono",Consolas,"Liberation Mono",monospace;
+  --sans:"Segoe UI",system-ui,-apple-system,"PingFang TC","Microsoft JhengHei",sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:#000;color:var(--ink);font:15px/1.5 var(--sans);overflow:hidden;overscroll-behavior:none}
+#gl{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+body.flying #gl{cursor:crosshair}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--cyan);outline-offset:3px;border-radius:6px}
+
+/* ---------- HUD ---------- */
+#hud{position:fixed;inset:0;pointer-events:none;font:12px/1.35 var(--mono);letter-spacing:.08em;opacity:0}
+.hudbox{position:absolute;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.hudbox small{display:block;color:var(--dim);font-size:10px;letter-spacing:.18em}
+.hudbox b{font-weight:600;color:var(--ink)}
+#nav{left:16px;top:16px;min-width:190px}
+#nav .big{font-size:26px;line-height:1.1;color:var(--ink);font-weight:600}
+#nav .unit{color:var(--dim);font-size:11px}
+#thr{position:relative;height:6px;margin:8px 0 2px;border-radius:3px;background:rgba(111,244,255,.12);overflow:hidden}
+#thrFill{position:absolute;inset:0 auto 0 0;width:0;background:linear-gradient(90deg,var(--cyan),var(--mag))}
+#alt{margin-top:6px}
+#warn{color:var(--amber);min-height:1.3em}
+#tgtPanel{right:16px;top:16px;min-width:220px;text-align:right}
+#tgtName{font-size:18px;color:var(--ink);font-weight:600}
+#tgtKind{color:var(--dim)}
+#tgtList{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:3px;pointer-events:auto}
+#tgtList button{width:100%;text-align:right;background:none;border:0;padding:2px 0;color:var(--dim);font:11px/1.4 var(--mono);letter-spacing:.1em}
+#tgtList button[aria-pressed="true"]{color:var(--cyan)}
+#tgtList button:hover{color:var(--ink)}
+#map{right:16px;bottom:16px;padding:6px}
+#map canvas{display:block;width:170px;height:170px}
+#status{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);font:12px/1 var(--mono);letter-spacing:.24em;color:var(--lime);text-shadow:0 0 12px rgba(185,255,114,.5);white-space:nowrap}
+#keys{left:16px;bottom:16px;color:var(--dim);font-size:11px;line-height:1.7}
+#keys kbd{display:inline-block;min-width:18px;padding:0 4px;margin-right:4px;border:1px solid var(--line);border-radius:4px;color:var(--ink);text-align:center;font:10px/16px var(--mono)}
+#reticle{position:absolute;left:50%;top:50%;width:64px;height:64px;margin:-32px 0 0 -32px}
+#vcur{position:absolute;left:0;top:0;width:14px;height:14px;margin:-7px 0 0 -7px;border:1.5px solid var(--cyan);border-radius:50%;opacity:0}
+#bracket{position:absolute;left:0;top:0;pointer-events:none;display:none}
+#bracket .c{position:absolute;width:12px;height:12px;border:2px solid var(--amber)}
+#bracket .c:nth-child(1){left:0;top:0;border-right:0;border-bottom:0}
+#bracket .c:nth-child(2){right:0;top:0;border-left:0;border-bottom:0}
+#bracket .c:nth-child(3){left:0;bottom:0;border-right:0;border-top:0}
+#bracket .c:nth-child(4){right:0;bottom:0;border-left:0;border-top:0}
+#bracket .lbl{position:absolute;left:100%;top:0;margin-left:10px;white-space:nowrap;color:var(--amber);font:11px/1.3 var(--mono);letter-spacing:.12em;text-shadow:0 0 8px #000}
+#arrow{position:absolute;left:0;top:0;width:0;height:0;border-left:9px solid transparent;border-right:9px solid transparent;border-bottom:16px solid var(--amber);display:none;filter:drop-shadow(0 0 6px rgba(255,179,71,.7))}
+#chargeRing{position:absolute;left:50%;top:50%;width:150px;height:150px;margin:-75px 0 0 -75px;opacity:0}
+#hud.hide .hudbox,#hud.hide #keys{display:none}
+
+/* ---------- overlay ---------- */
+#intro{position:fixed;inset:0;display:grid;place-items:center;padding:24px 16px;z-index:10;
+  background:radial-gradient(ellipse at 50% 60%,rgba(4,8,22,.35),rgba(0,0,0,.82))}
+.card{max-width:640px;width:100%;text-align:left}
+.kicker{font:12px/1 var(--mono);letter-spacing:.28em;color:var(--cyan);margin:0 0 14px}
+#introTitle{font-size:clamp(46px,11vw,104px);line-height:.9;margin:0;font-weight:800;letter-spacing:-.03em;white-space:nowrap;
+  background:linear-gradient(180deg,#fff 15%,#a6dcff 60%,#6b7cff);-webkit-background-clip:text;background-clip:text;color:transparent}
+#introLine{font:13px/1.4 var(--mono);letter-spacing:.16em;color:var(--lime);margin:16px 0 18px;min-height:1.4em}
+.card p.lede{color:#b7c3e2;margin:0 0 18px;max-width:58ch}
+.ctrl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 18px;margin:0 0 22px;padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:rgba(8,14,32,.6);font:12px/1.5 var(--mono);color:var(--dim)}
+.ctrl kbd{display:inline-block;min-width:20px;padding:0 5px;margin-right:6px;border:1px solid var(--line);border-radius:4px;color:var(--ink);text-align:center;font:11px/18px var(--mono)}
+.btn{display:inline-flex;align-items:center;gap:10px;padding:14px 22px;border-radius:999px;border:1px solid rgba(111,244,255,.55);
+  background:linear-gradient(180deg,rgba(111,244,255,.2),rgba(111,244,255,.05));font:600 13px/1 var(--mono);letter-spacing:.18em;text-transform:uppercase;
+  box-shadow:0 0 30px rgba(111,244,255,.2);transition:transform .2s cubic-bezier(.2,.8,.2,1)}
+.btn:hover{transform:translateY(-2px)}
+.btn .dot{width:8px;height:8px;border-radius:50%;background:var(--cyan);box-shadow:0 0 10px var(--cyan)}
+.note{margin-top:14px;font:11px/1.6 var(--mono);color:#6d7aa0}
+#err{position:fixed;inset:0;display:none;place-items:center;padding:24px;background:#000;z-index:20;text-align:center;font:14px/1.7 var(--mono);color:var(--amber)}
+@media (max-width:640px){
+  .ctrl{grid-template-columns:1fr}
+  #tgtPanel{min-width:0;max-width:46vw;padding:8px 10px}
+  #tgtList{display:none}
+  #nav{min-width:0;padding:8px 10px}
+  #nav .big{font-size:20px}
+  #map,#keys{display:none}
+  #status{bottom:auto;top:50%;margin-top:70px;font-size:10px}
+}
+
+/* ---------- touch controls ---------- */
+#touch{position:fixed;inset:0;pointer-events:none;display:none}
+body.touch.flying #touch{display:block}
+#stick{position:absolute;left:22px;bottom:26px;width:130px;height:130px;border-radius:50%;border:1px solid var(--line);background:rgba(8,14,32,.35);pointer-events:auto;touch-action:none}
+#knob{position:absolute;left:50%;top:50%;width:54px;height:54px;margin:-27px 0 0 -27px;border-radius:50%;background:rgba(111,244,255,.25);border:1px solid var(--cyan)}
+#tbtns{position:absolute;right:16px;bottom:22px;display:grid;grid-template-columns:repeat(2,64px);gap:10px;pointer-events:auto}
+#tbtns button{height:52px;border-radius:12px;border:1px solid var(--line);background:rgba(8,14,32,.55);font:600 11px/1 var(--mono);letter-spacing:.1em;touch-action:none;user-select:none;-webkit-user-select:none}
+#tbtns button:active{background:rgba(111,244,255,.2)}
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/",
+  "animejs": "https://cdn.jsdelivr.net/npm/animejs@4.5.0/+esm"
+} }
+</script>
+</head>
+<body>
+<canvas id="gl" aria-label="3D 太空飛行畫面"></canvas>
+
+<div id="hud" aria-hidden="true">
+  <svg id="reticle" viewBox="0 0 64 64"><g fill="none" stroke="#6ff4ff" stroke-width="1.5" opacity=".85">
+    <path d="M32 6v10M32 48v10M6 32h10M48 32h10"/><circle cx="32" cy="32" r="3"/><path d="M20 20l-5-5M44 20l5-5M20 44l-5 5M44 44l5 5" opacity=".5"/></g></svg>
+  <svg id="chargeRing" viewBox="0 0 150 150"><circle cx="75" cy="75" r="68" fill="none" stroke="#6ff4ff" stroke-opacity=".2" stroke-width="3"/>
+    <circle id="chargeArc" cx="75" cy="75" r="68" fill="none" stroke="#6ff4ff" stroke-width="3" stroke-linecap="round" transform="rotate(-90 75 75)" stroke-dasharray="427.3" stroke-dashoffset="427.3"/></svg>
+  <div id="vcur"></div>
+  <div id="bracket"><span class="c"></span><span class="c"></span><span class="c"></span><span class="c"></span><span class="lbl"></span></div>
+  <div id="arrow"></div>
+
+  <div class="hudbox" id="nav">
+    <small>VELOCITY</small>
+    <div><span class="big" id="spd">0</span> <span class="unit">km/s</span></div>
+    <div id="thr"><div id="thrFill"></div></div>
+    <small>THROTTLE <b id="thrTxt">0%</b> · <span id="boostTxt">CRUISE</span></small>
+    <div id="alt"><small>NEAREST</small><b id="nearTxt">—</b></div>
+    <div id="warn"></div>
+  </div>
+
+  <div class="hudbox" id="tgtPanel">
+    <small>TARGET</small>
+    <div id="tgtName">—</div>
+    <div id="tgtKind"></div>
+    <div><b id="tgtDist">—</b> <span id="tgtEta" style="color:var(--dim)"></span></div>
+    <ul id="tgtList"></ul>
+  </div>
+
+  <div class="hudbox" id="map"><canvas id="mapCv" width="340" height="340"></canvas></div>
+
+  <div class="hudbox" id="keys">
+    <kbd>拖動</kbd>轉向 <kbd>W</kbd><kbd>S</kbd>油門 <kbd>A</kbd><kbd>D</kbd>翻滾 <kbd>Shift</kbd>加速<br>
+    <kbd>T</kbd>選目標 <kbd>F</kbd>自動駕駛 <kbd>J</kbd>超空間跳躍 <kbd>C</kbd>視角 <kbd>B</kbd>對焦 <kbd>H</kbd>隱藏 <kbd>Esc</kbd>暫停
+  </div>
+  <div id="status">SYSTEMS ONLINE</div>
+</div>
+
+<div id="touch" aria-hidden="true">
+  <div id="stick"><div id="knob"></div></div>
+  <div id="tbtns">
+    <button type="button" data-hold="thrUp">THR +</button>
+    <button type="button" data-hold="boost">BOOST</button>
+    <button type="button" data-hold="thrDown">THR −</button>
+    <button type="button" data-tap="target">TARGET</button>
+    <button type="button" data-tap="auto">AUTO</button>
+    <button type="button" data-tap="jump">JUMP</button>
+    <button type="button" data-tap="view">VIEW</button>
+    <button type="button" data-tap="focus">FOCUS</button>
+  </div>
+</div>
+
+<div id="intro" role="dialog" aria-modal="true" aria-labelledby="introTitle">
+  <div class="card">
+    <p class="kicker">HELIOS SYSTEM · FIRST-PERSON FLIGHT</p>
+    <h1 id="introTitle">ASTERIA-7</h1>
+    <p id="introLine">LOADING STAR CHARTS…</p>
+    <p class="lede">你坐在（虛構的）偵察艦駕駛艙內。前方是海洋行星 Aurelia 和 Halo 太空站；更遠處有熔岩行星、帶光環的氣體巨星和冰封行星。自由飛近任何星球，或選定目標後超空間跳躍過去。</p>
+    <div class="ctrl" id="ctrlList">
+      <span><kbd>左鍵拖動</kbd>轉向（放手回正）</span><span><kbd>W</kbd><kbd>S</kbd>/ 滾輪　油門</span>
+      <span><kbd>A</kbd><kbd>D</kbd>翻滾</span><span><kbd>Shift</kbd>推進加速</span>
+      <span><kbd>T</kbd>切換目標</span><span><kbd>F</kbd>自動飛往目標</span>
+      <span><kbd>J</kbd>超空間跳躍</span><span><kbd>C</kbd>駕駛艙 / 外部視角</span>
+      <span><kbd>B</kbd>景深對焦切換</span><span><kbd>X</kbd>全停　<kbd>Esc</kbd>暫停</span>
+    </div>
+    <button type="button" class="btn" id="startBtn"><span class="dot"></span><span id="startTxt">Take control 開始駕駛</span></button>
+    <p class="note">three.js 0.186 · anime.js 4.5 · 所有星球、太空站與數據均為虛構。需要網絡載入函式庫；建議用電腦加獨立顯示卡開啟。</p>
+  </div>
+</div>
+<div id="err" role="alert"></div>
+
+<script>
+// Friendly message if the module never boots (offline, blocked CDN, or no WebGL)
+window.__booted = false;
+window.addEventListener('error', e => { if (!window.__booted) showErr('載入失敗：' + (e.message || '未知錯誤') + '<br>請確認已連接網絡，並使用最新版 Chrome / Edge / Firefox / Safari。'); });
+setTimeout(() => { if (!window.__booted) showErr('函式庫載入逾時。這個頁面需要網絡從 cdn.jsdelivr.net 載入 three.js 與 anime.js。'); }, 20000);
+function showErr(html){ const el = document.getElementById('err'); el.innerHTML = html; el.style.display = 'grid'; }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { animate, createTimeline, stagger, scrambleText } from 'animejs';
+
+const $ = s => document.querySelector(s);
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const isTouch = matchMedia('(pointer: coarse)').matches;
+if (isTouch) document.body.classList.add('touch');
+
+/* =====================================================================
+   Renderer, cameras, scenes
+   bgScene  : sky + stars, rendered with a rotation-only camera (infinitely far)
+   scene    : sun, planets, station, asteroids, ship model
+   cockScene: the cockpit, rendered into its own target, then composited
+   ===================================================================== */
+const canvas = $('#gl');
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+} catch (e) { showErr('你的瀏覽器無法啟用 WebGL，所以不能顯示 3D 畫面。'); throw e; }
+const PR_MAX = Math.min(window.devicePixelRatio || 1, 1.5), PR_MIN = 0.5;
+let pr = Math.min(PR_MAX, isTouch ? 0.8 : 1.0);   // adaptive internal resolution (see frame())
+renderer.setPixelRatio(pr);
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.95;
+
+const BASE_FOV = 70;
+const camera = new THREE.PerspectiveCamera(BASE_FOV, innerWidth / innerHeight, 1, 4e6);
+const bgCam = new THREE.PerspectiveCamera(BASE_FOV, innerWidth / innerHeight, 0.1, 1000);
+const cockCam = new THREE.PerspectiveCamera(BASE_FOV, innerWidth / innerHeight, 0.02, 30);
+const bgScene = new THREE.Scene();
+const scene = new THREE.Scene();
+const cockScene = new THREE.Scene();
+
+/* =====================================================================
+   GLSL: 3D simplex noise (Ashima / Stefan Gustavson, MIT) + fbm helpers
+   ===================================================================== */
+const NOISE = /* glsl */`
+vec3 mod289(vec3 x){return x-floor(x*(1.0/289.0))*289.0;}
+vec4 mod289(vec4 x){return x-floor(x*(1.0/289.0))*289.0;}
+vec4 permute(vec4 x){return mod289(((x*34.0)+10.0)*x);}
+vec4 taylorInvSqrt(vec4 r){return 1.79284291400159-0.85373472095314*r;}
+float snoise(vec3 v){
+  const vec2 C=vec2(1.0/6.0,1.0/3.0); const vec4 D=vec4(0.0,0.5,1.0,2.0);
+  vec3 i=floor(v+dot(v,C.yyy)); vec3 x0=v-i+dot(i,C.xxx);
+  vec3 g=step(x0.yzx,x0.xyz); vec3 l=1.0-g; vec3 i1=min(g.xyz,l.zxy); vec3 i2=max(g.xyz,l.zxy);
+  vec3 x1=x0-i1+C.xxx; vec3 x2=x0-i2+C.yyy; vec3 x3=x0-D.yyy;
+  i=mod289(i);
+  vec4 p=permute(permute(permute(i.z+vec4(0.0,i1.z,i2.z,1.0))+i.y+vec4(0.0,i1.y,i2.y,1.0))+i.x+vec4(0.0,i1.x,i2.x,1.0));
+  float n_=0.142857142857; vec3 ns=n_*D.wyz-D.xzx;
+  vec4 j=p-49.0*floor(p*ns.z*ns.z); vec4 x_=floor(j*ns.z); vec4 y_=floor(j-7.0*x_);
+  vec4 x=x_*ns.x+ns.yyyy; vec4 y=y_*ns.x+ns.yyyy; vec4 h=1.0-abs(x)-abs(y);
+  vec4 b0=vec4(x.xy,y.xy); vec4 b1=vec4(x.zw,y.zw);
+  vec4 s0=floor(b0)*2.0+1.0; vec4 s1=floor(b1)*2.0+1.0; vec4 sh=-step(h,vec4(0.0));
+  vec4 a0=b0.xzyw+s0.xzyw*sh.xxyy; vec4 a1=b1.xzyw+s1.xzyw*sh.zzww;
+  vec3 p0=vec3(a0.xy,h.x); vec3 p1=vec3(a0.zw,h.y); vec3 p2=vec3(a1.xy,h.z); vec3 p3=vec3(a1.zw,h.w);
+  vec4 norm=taylorInvSqrt(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3)));
+  p0*=norm.x; p1*=norm.y; p2*=norm.z; p3*=norm.w;
+  vec4 m=max(0.5-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.0); m=m*m;
+  return 105.0*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
+}
+float fbm(vec3 p,int oct){float a=0.5,s=0.0;for(int i=0;i<12;i++){if(i>=oct)break;s+=a*snoise(p);p=p*2.03+vec3(1.7,9.2,3.1);a*=0.5;}return s;}
+float ridged(vec3 p,int oct){float a=0.5,s=0.0;for(int i=0;i<12;i++){if(i>=oct)break;float n=1.0-abs(snoise(p));s+=a*n*n;p=p*2.1+vec3(3.1,1.3,7.7);a*=0.5;}return s;}
+`;
+
+/* =====================================================================
+   Sky (procedural nebula) and stars — bgScene
+   ===================================================================== */
+const skyMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide, depthWrite: false,
+  uniforms: { uTime: { value: 0 } },
+  vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: NOISE + `
+    varying vec3 vDir; uniform float uTime;
+    void main(){
+      vec3 d = normalize(vDir);
+      float band = exp(-pow(dot(d, normalize(vec3(0.3,1.0,0.2))) * 2.6, 2.0));
+      float n1 = fbm(d*1.6 + vec3(0.0,0.0,uTime*0.003), 6)*0.5+0.5;
+      float n2 = fbm(d*3.2 + 11.0, 6)*0.5+0.5;
+      float n3 = fbm(d*7.0 - 4.0, 4)*0.5+0.5;
+      vec3 violet = vec3(0.34,0.10,0.55), teal = vec3(0.04,0.32,0.50), rose = vec3(0.85,0.28,0.35), gold = vec3(0.9,0.62,0.35);
+      vec3 col = violet * pow(n1,2.2) * 0.9 + teal * pow(n2,2.4) * 0.8;
+      col += rose * pow(max(n1*n2,0.0),3.5) * 1.8;
+      col += gold * pow(n3,6.0) * band * 1.2;
+      col *= 0.18 + band*1.1;
+      col *= 1.0 - 0.45*smoothstep(0.55,0.85,n3)*band;       // dark dust lanes
+      gl_FragColor = vec4(col*0.33, 1.0);
+    }`,
+});
+// The nebula is expensive per pixel, so render it ONCE into a cube map and use that as the background.
+const skyScene = new THREE.Scene();
+skyScene.add(new THREE.Mesh(new THREE.SphereGeometry(100, 64, 32), skyMat));
+const skyRT = new THREE.WebGLCubeRenderTarget(isTouch ? 512 : 1024, { type: THREE.HalfFloatType });
+new THREE.CubeCamera(0.1, 1000, skyRT).update(renderer, skyScene);
+bgScene.background = skyRT.texture;
+
+function makeStars(n) {
+  const pos = new Float32Array(n * 3), col = new Float32Array(n * 3), size = new Float32Array(n);
+  const bandN = new THREE.Vector3(0.3, 1, 0.2).normalize(), v = new THREE.Vector3(), c = new THREE.Color();
+  for (let i = 0; i < n; i++) {
+    // half of the stars hug the galactic band
+    do { v.set(Math.random()*2-1, Math.random()*2-1, Math.random()*2-1); } while (v.lengthSq() > 1 || v.lengthSq() < 0.01);
+    v.normalize();
+    if (i % 2 === 0) { v.addScaledVector(bandN, -v.dot(bandN) * (0.75 + Math.random()*0.25)).normalize(); }
+    pos.set([v.x*90, v.y*90, v.z*90], i*3);
+    const t = Math.random();
+    c.setHSL(t < 0.7 ? 0.6 : (t < 0.9 ? 0.1 : 0.02), t < 0.7 ? 0.35 : 0.7, 0.8);
+    const b = Math.pow(Math.random(), 7) * 5 + 0.35;                 // a few very bright stars
+    col.set([c.r*b, c.g*b, c.b*b], i*3);
+    size[i] = 1.0 + Math.pow(Math.random(), 5) * 3.5;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.setAttribute('aSize', new THREE.BufferAttribute(size, 1));
+  const m = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    uniforms: { uDpr: { value: pr }, uDim: { value: 1 } },
+    vertexShader: `attribute float aSize; varying vec3 vCol; uniform float uDpr;
+      void main(){ vCol = color; gl_PointSize = aSize * uDpr; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+    fragmentShader: `varying vec3 vCol; uniform float uDim;
+      void main(){ vec2 q = gl_PointCoord - 0.5; float a = smoothstep(0.5, 0.0, length(q)); gl_FragColor = vec4(vCol * a * uDim, a); }`,
+    vertexColors: true,
+  });
+  return new THREE.Points(g, m);
+}
+const stars = makeStars(isTouch ? 6000 : 11000);
+bgScene.add(stars);
+
+/* =====================================================================
+   Sun
+   ===================================================================== */
+const SUN_R = 4000;
+const sunMat = new THREE.ShaderMaterial({
+  uniforms: { uTime: { value: 0 } },
+  vertexShader: `varying vec3 vObj; varying vec3 vN; varying vec3 vPosW;
+    void main(){ vObj = normalize(position); vN = normalize(mat3(modelMatrix)*normal); vec4 w = modelMatrix*vec4(position,1.0); vPosW = w.xyz; gl_Position = projectionMatrix*viewMatrix*w; }`,
+  fragmentShader: NOISE + `varying vec3 vObj; varying vec3 vN; varying vec3 vPosW; uniform float uTime;
+    void main(){
+      float g = fbm(vObj*6.0 + vec3(uTime*0.02), 5)*0.5+0.5;
+      float cells = ridged(vObj*18.0 + vec3(0.0,uTime*0.03,0.0), 3);
+      vec3 V = normalize(cameraPosition - vPosW);
+      float limb = pow(max(dot(normalize(vN), V), 0.0), 0.45);
+      vec3 col = mix(vec3(1.0,0.35,0.06), vec3(1.0,0.86,0.55), g) * (0.6 + 0.6*cells);
+      gl_FragColor = vec4(col * (1.2 + 3.2*limb), 1.0);
+    }`,
+});
+const sun = new THREE.Mesh(new THREE.SphereGeometry(SUN_R, 96, 64), sunMat);
+scene.add(sun);
+const coronaMat = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  uniforms: { uTime: { value: 0 } },
+  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+  fragmentShader: NOISE + `varying vec2 vUv; uniform float uTime;
+    void main(){
+      vec2 q = vUv - 0.5; float r = length(q)*2.0; float a = atan(q.y, q.x);
+      float rays = 0.55 + 0.45*snoise(vec3(cos(a)*3.0, sin(a)*3.0, uTime*0.08));
+      float glow = pow(max(1.0 - r, 0.0), 3.5) * 2.2 + pow(max(1.0 - r, 0.0), 1.4) * 0.35 * rays;
+      gl_FragColor = vec4(vec3(1.0,0.62,0.3) * glow, 1.0);
+    }`,
+});
+const corona = new THREE.Mesh(new THREE.PlaneGeometry(SUN_R*7, SUN_R*7), coronaMat);
+scene.add(corona);
+const sunLight = new THREE.PointLight(0xfff1dd, 3.2, 0, 0);
+scene.add(sunLight);
+scene.add(new THREE.AmbientLight(0x223355, 0.12));
+
+/* =====================================================================
+   Planets
+   ===================================================================== */
+const PLANET_FRAG = NOISE + `
+  uniform int uType; uniform float uTime; uniform float uDetail; uniform vec3 uSeed; uniform vec3 uAtmo; uniform int uMaxOct;
+  varying vec3 vObj; varying vec3 vN; varying vec3 vPosW;
+  void main(){
+    vec3 p = vObj + uSeed;
+    vec3 N = normalize(vN);
+    vec3 L = normalize(-vPosW);                    // the sun sits at the origin
+    vec3 V = normalize(cameraPosition - vPosW);
+    float ndl = dot(N, L);
+    float lit = smoothstep(-0.06, 0.3, ndl);
+    int oct = min(uMaxOct, 4 + int(uDetail * 5.0));
+    vec3 albedo = vec3(0.5); vec3 emis = vec3(0.0); float spec = 0.0;
+    if (uType == 0) {                                   // ocean world
+      float h = fbm(p*1.7, oct);
+      float lat = abs(vObj.y);
+      if (h < 0.05) { albedo = mix(vec3(0.005,0.03,0.12), vec3(0.02,0.2,0.36), smoothstep(-0.3,0.05,h)); spec = 1.0; }
+      else {
+        albedo = mix(vec3(0.72,0.64,0.42), vec3(0.14,0.34,0.1), smoothstep(0.05,0.1,h));
+        albedo = mix(albedo, vec3(0.34,0.27,0.2), smoothstep(0.22,0.4,h));
+        albedo = mix(albedo, vec3(0.92), smoothstep(0.45,0.55,h));
+        float city = smoothstep(0.35, 0.85, snoise(p*70.0)) * smoothstep(0.07,0.15,h) * (1.0 - smoothstep(0.3,0.42,h));
+        emis = vec3(1.0,0.6,0.25) * city * 2.6 * (1.0 - smoothstep(-0.2, 0.02, ndl));
+      }
+      albedo = mix(albedo, vec3(0.95), smoothstep(0.8, 0.9, lat + fbm(p*4.0,3)*0.07));
+    } else if (uType == 1) {                            // gas giant
+      float lat = vObj.y;
+      float w = fbm(p*vec3(1.4,5.0,1.4) + vec3(uTime*0.01,0.0,0.0), oct) * 0.28;
+      float b1 = sin((lat + w) * 23.0) * 0.5 + 0.5;
+      float b2 = sin((lat + w*1.7) * 61.0) * 0.5 + 0.5;
+      albedo = mix(vec3(0.86,0.72,0.52), vec3(0.6,0.36,0.22), b1);
+      albedo = mix(albedo, vec3(0.96,0.92,0.84), b2*0.35);
+      vec3 sc = normalize(vec3(0.55,-0.22,0.8));
+      float sd = length((normalize(vObj) - sc) * vec3(1.0,2.2,1.0));
+      float swirl = fbm(vObj*14.0 + sd*6.0, 4);
+      albedo = mix(albedo, vec3(0.78,0.3,0.18), smoothstep(0.2,0.05,sd + swirl*0.05) * 0.85);
+    } else if (uType == 2) {                            // lava world
+      float crust = fbm(p*3.0, oct)*0.5+0.5;
+      float r = ridged(p*2.4, oct);
+      albedo = mix(vec3(0.04,0.03,0.03), vec3(0.2,0.14,0.12), crust);
+      float cr = pow(smoothstep(0.62, 0.98, r), 3.0);
+      float pulse = 0.8 + 0.2*sin(uTime*1.3 + crust*12.0);
+      emis = mix(vec3(1.0,0.18,0.02), vec3(1.0,0.75,0.3), cr) * cr * 4.0 * pulse;
+    } else if (uType == 3) {                            // ice world
+      float h = fbm(p*2.2, oct); float r = ridged(p*5.0, oct);
+      albedo = mix(vec3(0.66,0.8,0.93), vec3(0.97,0.98,1.0), smoothstep(-0.2,0.4,h));
+      albedo = mix(albedo, vec3(0.22,0.5,0.72), smoothstep(0.72,0.95,r)*0.7);
+      spec = 0.45;
+    } else {                                            // rocky moon
+      float h = fbm(p*2.5, oct)*0.5+0.5; float cr = ridged(p*6.0, oct);
+      albedo = mix(vec3(0.25,0.24,0.23), vec3(0.62,0.6,0.57), h) * (0.75 + 0.35*smoothstep(0.4,0.9,cr));
+    }
+    vec3 H = normalize(L + V);
+    float sp = pow(max(dot(N,H),0.0), 70.0) * spec * lit;
+    vec3 term = mix(vec3(1.0,0.5,0.3), vec3(1.0), smoothstep(0.0,0.35,ndl));
+    float rim = pow(1.0 - max(dot(N,V),0.0), 3.0);
+    vec3 col = albedo * lit * term * 0.95 + sp * vec3(1.0,0.95,0.85) * 0.8 + albedo * 0.01 + emis;
+    col += uAtmo * rim * smoothstep(-0.25, 0.4, ndl) * 1.2;
+    gl_FragColor = vec4(col, 1.0);
+  }`;
+const PLANET_VERT = `varying vec3 vObj; varying vec3 vN; varying vec3 vPosW;
+  void main(){ vObj = normalize(position); vN = normalize(mat3(modelMatrix)*normal); vec4 w = modelMatrix*vec4(position,1.0); vPosW = w.xyz; gl_Position = projectionMatrix*viewMatrix*w; }`;
+const MAX_OCT = isTouch ? 6 : 8;
+
+function planetMaterial(type, seed, atmo) {
+  return new THREE.ShaderMaterial({
+    uniforms: { uType: { value: type }, uTime: { value: 0 }, uDetail: { value: 0 }, uSeed: { value: new THREE.Vector3(...seed) },
+      uAtmo: { value: new THREE.Color(...(atmo || [0,0,0])) }, uMaxOct: { value: MAX_OCT } },
+    vertexShader: PLANET_VERT, fragmentShader: PLANET_FRAG,
+  });
+}
+function haloMaterial(color, R, Rh) {
+  return new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, side: THREE.BackSide, blending: THREE.AdditiveBlending,
+    uniforms: { uColor: { value: new THREE.Color(...color) }, uCenter: { value: new THREE.Vector3() }, uR: { value: R }, uRh: { value: Rh } },
+    vertexShader: `varying vec3 vPosW; varying vec3 vN; void main(){ vec4 w = modelMatrix*vec4(position,1.0); vPosW = w.xyz; vN = normalize(mat3(modelMatrix)*normal); gl_Position = projectionMatrix*viewMatrix*w; }`,
+    fragmentShader: `varying vec3 vPosW; varying vec3 vN; uniform vec3 uColor; uniform vec3 uCenter; uniform float uR; uniform float uRh;
+      void main(){
+        vec3 V = normalize(cameraPosition - vPosW);
+        float d = dot(normalize(vN), V);
+        float edge = sqrt(1.0 - (uR*uR)/(uRh*uRh));
+        float glow = pow(smoothstep(0.0, edge, -d), 1.7);
+        float inside = 1.0 - smoothstep(uRh*0.98, uRh*1.02, length(cameraPosition - uCenter));
+        glow = mix(glow, 0.55 + 0.45*glow, inside);
+        vec3 L = normalize(-uCenter);
+        float sun = smoothstep(-0.35, 0.55, dot(normalize(vPosW - uCenter), L));
+        gl_FragColor = vec4(uColor * glow * (0.05 + 0.85*sun), 1.0);
+      }`,
+  });
+}
+function cloudMaterial(seed) {
+  return new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false,
+    uniforms: { uSeed: { value: new THREE.Vector3(...seed) }, uDetail: { value: 0 }, uMaxOct: { value: MAX_OCT } },
+    vertexShader: PLANET_VERT,
+    fragmentShader: NOISE + `varying vec3 vObj; varying vec3 vN; varying vec3 vPosW; uniform vec3 uSeed; uniform float uDetail; uniform int uMaxOct;
+      void main(){
+        int oct = min(uMaxOct - 2, 3 + int(uDetail*4.0));
+        float c = fbm(vObj*vec3(2.6,4.0,2.6) + uSeed*3.0, oct);
+        float a = smoothstep(0.02, 0.5, c);
+        float lit = smoothstep(-0.1, 0.35, dot(normalize(vN), normalize(-vPosW)));
+        gl_FragColor = vec4(vec3(1.0) * (lit*0.8 + 0.008), a * 0.72);
+      }`,
+  });
+}
+function ringMaterial(inner, outer, planetPos, planetR) {
+  return new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, side: THREE.DoubleSide,
+    uniforms: { uIn: { value: inner }, uOut: { value: outer }, uP: { value: planetPos }, uPR: { value: planetR } },
+    vertexShader: `varying vec3 vLocal; varying vec3 vPosW; void main(){ vLocal = position; vec4 w = modelMatrix*vec4(position,1.0); vPosW = w.xyz; gl_Position = projectionMatrix*viewMatrix*w; }`,
+    fragmentShader: NOISE + `varying vec3 vLocal; varying vec3 vPosW; uniform float uIn; uniform float uOut; uniform vec3 uP; uniform float uPR;
+      void main(){
+        float r = length(vLocal.xy); float t = (r - uIn)/(uOut - uIn);
+        float n = snoise(vec3(t*120.0, 0.5, 1.5))*0.5+0.5;
+        float bands = 0.5 + 0.5*sin(t*70.0 + snoise(vec3(t*20.0,3.0,0.0))*2.5);
+        float a = smoothstep(0.0,0.03,t) * smoothstep(1.0,0.9,t) * (0.25 + 0.75*bands*n);
+        a *= 1.0 - smoothstep(0.40,0.43,t)*(1.0 - smoothstep(0.47,0.5,t)) * 0.92;   // Cassini-like gap
+        vec3 L = normalize(-vPosW); vec3 oc = vPosW - uP; float b = dot(oc, L); float c = dot(oc,oc) - uPR*uPR;
+        float shadow = (b*b - c > 0.0 && b < 0.0) ? 0.12 : 1.0;                     // planet shadow on the rings
+        vec3 col = mix(vec3(0.7,0.58,0.45), vec3(0.96,0.9,0.78), n) * shadow * 1.2;
+        gl_FragColor = vec4(col, a * 0.92);
+      }`,
+  });
+}
+
+const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
+const BODIES = [
+  { id: 'aurelia', name: 'AURELIA', kind: '海洋行星 · Ocean world', type: 0, R: 1100, pos: V3(18000, 400, -19000), atmo: [0.3, 0.58, 1.0], halo: 1.09, clouds: true, spin: 0.012, seed: [0.3, 1.2, 2.1] },
+  { id: 'selene', name: 'SELENE', kind: '衛星 · Moon of Aurelia', type: 4, R: 300, pos: V3(22200, 1500, -15600), atmo: null, spin: 0.004, seed: [5, 2, 1] },
+  { id: 'vesper', name: 'VESPER', kind: '熔岩行星 · Lava world', type: 2, R: 750, pos: V3(-9000, -400, 9800), atmo: [1.0, 0.32, 0.1], halo: 1.06, spin: 0.02, seed: [2, 7, 1] },
+  { id: 'kharon', name: 'KHARON', kind: '氣體巨星 · Ringed gas giant', type: 1, R: 3000, pos: V3(-52000, 2600, -46000), atmo: [1.0, 0.78, 0.5], halo: 1.05, rings: [4200, 7800], spin: 0.03, seed: [1, 1, 1] },
+  { id: 'nivalis', name: 'NIVALIS', kind: '冰封行星 · Ice world', type: 3, R: 850, pos: V3(70000, -3200, 82000), atmo: [0.55, 0.85, 1.0], halo: 1.06, spin: 0.006, seed: [9, 3, 4] },
+  { id: 'halo', name: 'HALO STATION', kind: '太空站 · Orbital station', station: true, R: 320, pos: V3(17200, 1150, -16200) },
+  { id: 'helios', name: 'HELIOS', kind: '恆星 · G-type star', sun: true, R: SUN_R, pos: V3(0, 0, 0) },
+];
+const bodyMats = [];
+for (const b of BODIES) {
+  if (b.sun) { b.mesh = sun; continue; }
+  if (b.station) continue;
+  const mat = planetMaterial(b.type, b.seed, b.atmo);
+  bodyMats.push({ b, mat });
+  b.mesh = new THREE.Mesh(new THREE.SphereGeometry(b.R, 160, 120), mat);
+  b.mesh.position.copy(b.pos);
+  b.mesh.rotation.z = 0.25;
+  scene.add(b.mesh);
+  if (b.halo) {
+    const Rh = b.R * b.halo;
+    const h = new THREE.Mesh(new THREE.SphereGeometry(Rh, 96, 64), haloMaterial(b.atmo, b.R, Rh));
+    h.position.copy(b.pos); h.material.uniforms.uCenter.value.copy(b.pos); scene.add(h);
+  }
+  if (b.clouds) {
+    b.cloudMat = cloudMaterial(b.seed);
+    b.cloud = new THREE.Mesh(new THREE.SphereGeometry(b.R * 1.012, 160, 120), b.cloudMat);
+    b.cloud.position.copy(b.pos); b.cloud.rotation.z = 0.25; scene.add(b.cloud);
+  }
+  if (b.rings) {
+    const ring = new THREE.Mesh(new THREE.RingGeometry(b.rings[0], b.rings[1], 256, 8), ringMaterial(b.rings[0], b.rings[1], b.pos, b.R));
+    ring.position.copy(b.pos); ring.rotation.set(-Math.PI / 2 + 0.38, 0.2, 0); scene.add(ring);
+  }
+}
+
+/* Environment map from the sky, for metal reflections on station, ship and rocks */
+const pmrem = new THREE.PMREMGenerator(renderer);
+const envTex = pmrem.fromCubemap(skyRT.texture).texture;
+
+/* =====================================================================
+   Halo station
+   ===================================================================== */
+const station = new THREE.Group();
+(() => {
+  const metal = new THREE.MeshStandardMaterial({ color: 0xb9c3d8, metalness: 0.85, roughness: 0.32, envMap: envTex, envMapIntensity: 0.9 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x2a3150, metalness: 0.6, roughness: 0.5, envMap: envTex });
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(260, 26, 24, 160), metal);
+  station.add(ring);
+  const ring2 = new THREE.Mesh(new THREE.TorusGeometry(260, 8, 12, 160), dark); ring2.scale.set(1, 1, 3.6); station.add(ring2);
+  for (let i = 0; i < 6; i++) {
+    const s = new THREE.Mesh(new THREE.CylinderGeometry(7, 7, 250, 12), dark);
+    s.rotation.z = i / 6 * Math.PI * 2; s.position.set(Math.sin(-s.rotation.z) * 125, Math.cos(s.rotation.z) * 125, 0);
+    station.add(s);
+  }
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(42, 42, 170, 32), metal); hub.rotation.x = Math.PI / 2; station.add(hub);
+  const dish = new THREE.Mesh(new THREE.SphereGeometry(60, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2.4), dark); dish.position.z = 110; dish.rotation.x = Math.PI / 2; station.add(dish);
+  // windows / beacons
+  const lampGeo = new THREE.BoxGeometry(10, 5, 5);
+  const warm = new THREE.MeshBasicMaterial({ color: new THREE.Color(2.2, 1.6, 0.9) });
+  const red = new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 0.3, 0.3) });
+  const lamps = new THREE.InstancedMesh(lampGeo, warm, 120);
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion();
+  for (let i = 0; i < 120; i++) {
+    const a = i / 120 * Math.PI * 2, side = i % 2 ? 1 : -1;
+    q.setFromAxisAngle(new THREE.Vector3(0, 0, 1), a);
+    m.compose(new THREE.Vector3(Math.cos(a) * 287, Math.sin(a) * 287, side * 12), q, new THREE.Vector3(1, 1, 1));
+    lamps.setMatrixAt(i, m);
+  }
+  station.add(lamps);
+  station.userData.beacons = [];
+  for (let i = 0; i < 4; i++) {
+    const bcn = new THREE.Mesh(new THREE.SphereGeometry(6, 12, 8), red);
+    const a = i / 4 * Math.PI * 2; bcn.position.set(Math.cos(a) * 262, Math.sin(a) * 262, 30); station.add(bcn);
+    station.userData.beacons.push(bcn);
+  }
+})();
+const stationBody = BODIES.find(b => b.station);
+station.position.copy(stationBody.pos);
+station.lookAt(BODIES[0].pos);
+scene.add(station);
+stationBody.mesh = station;
+
+/* =====================================================================
+   Asteroid belt (instanced)
+   ===================================================================== */
+(() => {
+  let g = new THREE.IcosahedronGeometry(1, 1);
+  g.deleteAttribute('normal'); g.deleteAttribute('uv');
+  g = mergeVertices(g);
+  const p = g.attributes.position, v = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i);
+    const k = 1 + 0.28 * Math.sin(v.x * 3.1 + 1.3) * Math.cos(v.y * 2.7) + 0.18 * Math.sin(v.z * 5.3 + v.x * 2.0);
+    v.multiplyScalar(k); p.setXYZ(i, v.x, v.y * 0.8, v.z);
+  }
+  g.computeVertexNormals();
+  const mat = new THREE.MeshStandardMaterial({ color: 0x8a7d72, roughness: 0.95, metalness: 0.1, flatShading: true, envMap: envTex, envMapIntensity: 0.25 });
+  const N = isTouch ? 1000 : 1800;
+  const rocks = new THREE.InstancedMesh(g, mat, N);
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), s = new THREE.Vector3(), pos = new THREE.Vector3();
+  for (let i = 0; i < N; i++) {
+    const a = Math.random() * Math.PI * 2, r = 38000 + (Math.random() + Math.random()) * 4000;
+    pos.set(Math.cos(a) * r, (Math.random() - 0.5) * 1400 * Math.random(), Math.sin(a) * r);
+    e.set(Math.random() * 6, Math.random() * 6, Math.random() * 6); q.setFromEuler(e);
+    const sc = 12 + Math.pow(Math.random(), 3) * 220; s.set(sc, sc * (0.6 + Math.random() * 0.5), sc);
+    m.compose(pos, q, s); rocks.setMatrixAt(i, m);
+  }
+  scene.add(rocks);
+})();
+
+/* =====================================================================
+   Ship model (seen in the external view)
+   ===================================================================== */
+const shipModel = new THREE.Group();
+const flameMats = [];
+(() => {
+  const hullM = new THREE.MeshStandardMaterial({ color: 0xd5dcee, metalness: 0.8, roughness: 0.28, envMap: envTex, envMapIntensity: 1.1 });
+  const darkM = new THREE.MeshStandardMaterial({ color: 0x252c48, metalness: 0.7, roughness: 0.4, envMap: envTex });
+  const glassM = new THREE.MeshStandardMaterial({ color: 0x0b2a4a, metalness: 1, roughness: 0.05, envMap: envTex, envMapIntensity: 1.6 });
+  const accentM = new THREE.MeshBasicMaterial({ color: new THREE.Color(2.6, 0.5, 2.2) });
+  const prof = [[0, -8], [1.3, -8], [1.85, -6], [2.05, -1], [1.65, 4], [0.95, 7], [0.25, 9], [0, 9.3]].map(([x, y]) => new THREE.Vector2(x, y));
+  const hull = new THREE.Mesh(new THREE.LatheGeometry(prof, 48), hullM); hull.rotation.x = -Math.PI / 2; shipModel.add(hull);
+  const canopy = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 16), glassM); canopy.scale.set(0.95, 0.7, 2.3); canopy.position.set(0, 1.35, -3.2); shipModel.add(canopy);
+  const wingShape = new THREE.Shape(); wingShape.moveTo(0, 0); wingShape.lineTo(7.5, 4.2); wingShape.lineTo(8, 6.2); wingShape.lineTo(0, 5.4); wingShape.lineTo(0, 0);
+  const wingGeo = new THREE.ExtrudeGeometry(wingShape, { depth: 0.35, bevelEnabled: true, bevelSize: 0.15, bevelThickness: 0.12, bevelSegments: 2 });
+  for (const side of [-1, 1]) {
+    const w = new THREE.Mesh(wingGeo, darkM); w.rotation.x = Math.PI / 2; w.scale.x = side; w.position.set(side * 1.4, 0.2, -0.5); shipModel.add(w);
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(5.2, 0.08, 0.35), accentM); stripe.position.set(side * 4.6, 0.62, 2.6); stripe.rotation.y = side * -0.5; shipModel.add(stripe);
+    const eng = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 1.05, 4.5, 24), hullM); eng.rotation.x = Math.PI / 2; eng.position.set(side * 1.25, -0.2, 6.6); shipModel.add(eng);
+    const glow = new THREE.Mesh(new THREE.CircleGeometry(0.8, 24), new THREE.MeshBasicMaterial({ color: new THREE.Color(3.5, 1.6, 0.5) })); glow.position.set(side * 1.25, -0.2, 8.9); shipModel.add(glow);
+    const fm = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, uniforms: { uT: { value: 0 }, uPow: { value: 0.3 } },
+      vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+      fragmentShader: `varying vec2 vUv; uniform float uT; uniform float uPow;
+        void main(){ float along = vUv.y; float core = smoothstep(0.5, 0.0, abs(fract(vUv.x)-0.5)) ;
+          float flick = 0.85 + 0.15*sin(uT*60.0 + along*20.0);
+          float a = pow(along, 1.6) * flick * uPow;
+          gl_FragColor = vec4(mix(vec3(1.0,0.35,0.1), vec3(1.0,0.9,0.6), pow(along,3.0)) * a * 3.0, a); }`,
+    });
+    flameMats.push(fm);
+    const flame = new THREE.Mesh(new THREE.ConeGeometry(0.8, 7, 20, 1, true), fm); flame.rotation.x = -Math.PI / 2; flame.position.set(side * 1.25, -0.2, 12.4); shipModel.add(flame);
+    const nav = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 8), new THREE.MeshBasicMaterial({ color: side < 0 ? new THREE.Color(3, 0.2, 0.2) : new THREE.Color(0.2, 3, 0.4) }));
+    nav.position.set(side * 9.3, 0.4, 5.7); shipModel.add(nav);
+  }
+  const fin = new THREE.Mesh(new THREE.BoxGeometry(0.25, 3.2, 4), darkM); fin.position.set(0, 2.2, 4.8); fin.rotation.x = -0.35; shipModel.add(fin);
+})();
+shipModel.visible = false;
+scene.add(shipModel);
+
+/* =====================================================================
+   Speed dust: short line segments that stream past the ship
+   ===================================================================== */
+const DUST = isTouch ? 350 : 700;
+const dustPos = new Float32Array(DUST * 6), dustCol = new Float32Array(DUST * 6), dustP = [];
+for (let i = 0; i < DUST; i++) {
+  dustP.push(new THREE.Vector3((Math.random() - 0.5) * 600, (Math.random() - 0.5) * 600, (Math.random() - 0.5) * 600));
+  const b = 0.25 + Math.random() * 0.5;
+  dustCol.set([b, b * 1.05, b * 1.15, 0, 0, 0], i * 6);
+}
+const dustGeo = new THREE.BufferGeometry();
+dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
+dustGeo.setAttribute('color', new THREE.BufferAttribute(dustCol, 3));
+const dust = new THREE.LineSegments(dustGeo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+dust.frustumCulled = false;
+scene.add(dust);
+
+/* =====================================================================
+   Cockpit
+   ===================================================================== */
+const cockpit = new THREE.Group();
+cockScene.add(cockpit);
+const screens = [];
+let stickMesh, leverMesh, blinkers = [];
+(() => {
+  const frameM = new THREE.MeshStandardMaterial({ color: 0x1a2032, metalness: 0.75, roughness: 0.38, envMap: envTex, envMapIntensity: 0.6 });
+  const panelM = new THREE.MeshStandardMaterial({ color: 0x121726, metalness: 0.45, roughness: 0.6, envMap: envTex, envMapIntensity: 0.3 });
+  const trimM = new THREE.MeshStandardMaterial({ color: 0x3a4466, metalness: 0.9, roughness: 0.25, envMap: envTex });
+  const tube = (pts, r, m = frameM) => { const c = new THREE.CatmullRomCurve3(pts.map(p => new THREE.Vector3(...p))); const mesh = new THREE.Mesh(new THREE.TubeGeometry(c, 48, r, 12, false), m); cockpit.add(mesh); return mesh; };
+  // canopy frame
+  tube([[-1.55, -0.6, -1.55], [-1.3, 0.1, -1.45], [-1.02, 0.78, -1.32]], 0.07);
+  tube([[1.55, -0.6, -1.55], [1.3, 0.1, -1.45], [1.02, 0.78, -1.32]], 0.07);
+  tube([[-1.02, 0.78, -1.32], [0, 0.93, -1.25], [1.02, 0.78, -1.32]], 0.07);
+  tube([[0, 0.93, -1.25], [0, 1.12, -0.3], [0, 1.1, 0.6]], 0.055);
+  tube([[-1.02, 0.78, -1.32], [-1.35, 0.72, -0.2], [-1.45, 0.55, 0.7]], 0.06);
+  tube([[1.02, 0.78, -1.32], [1.35, 0.72, -0.2], [1.45, 0.55, 0.7]], 0.06);
+  tube([[-1.55, -0.6, -1.55], [-1.75, -0.45, -0.3], [-1.8, -0.35, 0.7]], 0.08);
+  tube([[1.55, -0.6, -1.55], [1.75, -0.45, -0.3], [1.8, -0.35, 0.7]], 0.08);
+  // dashboard
+  const dash = new THREE.Mesh(new THREE.BoxGeometry(3.3, 0.14, 1.0), panelM); dash.position.set(0, -0.66, -1.05); dash.rotation.x = 0.42; cockpit.add(dash);
+  const lip = new THREE.Mesh(new THREE.BoxGeometry(3.3, 0.5, 0.12), panelM); lip.position.set(0, -0.92, -0.6); cockpit.add(lip);
+  const hood = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.08, 0.35), trimM); hood.position.set(0, -0.44, -1.18); hood.rotation.x = -0.2; cockpit.add(hood);
+  for (const s of [-1, 1]) {
+    const side = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.14, 1.5), panelM); side.position.set(s * 1.3, -0.82, -0.3); side.rotation.set(0.1, 0, s * -0.32); cockpit.add(side);
+  }
+  // screens (canvas textures)
+  const mkScreen = (w, h, x, y, z, ry, rx) => {
+    const cv = document.createElement('canvas'); cv.width = 512; cv.height = Math.round(512 * h / w);
+    const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
+    const mat = new THREE.MeshBasicMaterial({ map: tex, color: new THREE.Color(1.15, 1.15, 1.15), transparent: true, opacity: 0 });
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+    mesh.position.set(x, y, z); mesh.rotation.set(rx, ry, 0);
+    const bezel = new THREE.Mesh(new THREE.BoxGeometry(w + 0.05, h + 0.05, 0.03), trimM); bezel.position.z = -0.02; mesh.add(bezel);
+    cockpit.add(mesh);
+    const scr = { cv, ctx: cv.getContext('2d'), tex, mat, mesh }; screens.push(scr); return scr;
+  };
+  mkScreen(0.62, 0.36, 0, -0.5, -1.1, 0, -0.62);
+  mkScreen(0.5, 0.32, -0.74, -0.53, -1.02, 0.42, -0.6);
+  mkScreen(0.5, 0.32, 0.74, -0.53, -1.02, -0.42, -0.6);
+  // switch rows that blink
+  const cols = [new THREE.Color(0.2, 2.2, 2.6), new THREE.Color(2.6, 1.3, 0.2), new THREE.Color(2.6, 0.3, 1.8), new THREE.Color(0.8, 2.4, 0.3)];
+  for (const s of [-1, 1]) for (let i = 0; i < 12; i++) {
+    const m = new THREE.MeshBasicMaterial({ color: cols[(i + (s > 0 ? 2 : 0)) % 4].clone() });
+    const b = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.02, 0.05), m);
+    b.position.set(s * (1.12 + (i % 3) * 0.1), -0.72 + (i % 3) * 0.035 * -s, -0.75 + Math.floor(i / 3) * 0.14);
+    b.rotation.z = s * -0.32; cockpit.add(b);
+    blinkers.push({ m, base: m.color.clone(), phase: Math.random() * 10, rate: 0.5 + Math.random() * 2 });
+  }
+  // flight stick & throttle lever
+  stickMesh = new THREE.Group();
+  const stickShaft = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.025, 0.32, 12), trimM); stickShaft.position.y = 0.16; stickMesh.add(stickShaft);
+  const grip = new THREE.Mesh(new THREE.CapsuleGeometry(0.035, 0.1, 6, 12), frameM); grip.position.y = 0.35; stickMesh.add(grip);
+  const trig = new THREE.Mesh(new THREE.SphereGeometry(0.015, 10, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 0.4, 0.4) })); trig.position.set(0, 0.42, -0.03); stickMesh.add(trig);
+  stickMesh.position.set(0.38, -1.12, -0.55); cockpit.add(stickMesh);
+  leverMesh = new THREE.Group();
+  const lever = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.22, 10), trimM); lever.position.y = 0.11; leverMesh.add(lever);
+  const knob = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.05, 0.06), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.3, 2.2, 2.6) })); knob.position.y = 0.23; leverMesh.add(knob);
+  leverMesh.position.set(-0.9, -0.84, -0.5); cockpit.add(leverMesh);
+})();
+cockScene.add(new THREE.AmbientLight(0x3a4a70, 0.35));
+const cabinLight = new THREE.PointLight(0x66e8ff, 0.6, 3.0, 1.5); cabinLight.position.set(0, -0.35, -0.9); cockScene.add(cabinLight);
+const cockSun = new THREE.DirectionalLight(0xfff0dd, 2.4); cockScene.add(cockSun); cockScene.add(cockSun.target);
+
+/* =====================================================================
+   Post-processing: space → cockpit composite (depth of field) → bloom → lens/warp → output
+   ===================================================================== */
+const cockRT = new THREE.WebGLRenderTarget(innerWidth * pr, innerHeight * pr, { type: THREE.HalfFloatType, samples: isTouch ? 0 : 2 });
+const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(innerWidth * pr, innerHeight * pr, { type: THREE.HalfFloatType }));
+composer.setPixelRatio(pr);
+composer.setSize(innerWidth, innerHeight);
+const bgPass = new RenderPass(bgScene, bgCam);
+const mainPass = new RenderPass(scene, camera); mainPass.clear = false;
+composer.addPass(bgPass);
+composer.addPass(mainPass);
+
+const TAPS = `const int TAPS = 12;
+  vec2 disk(int i){ float a = float(i) * 2.39996; float r = sqrt((float(i)+0.5)/12.0); return vec2(cos(a), sin(a)) * r; }`;
+const cockPass = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, tCock: { value: null }, uBlurC: { value: 2.2 }, uBlurS: { value: 0 }, uRes: { value: new THREE.Vector2(innerWidth * pr, innerHeight * pr) }, uOn: { value: 1 } },
+  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+  fragmentShader: `uniform sampler2D tDiffuse; uniform sampler2D tCock; uniform float uBlurC; uniform float uBlurS; uniform vec2 uRes; uniform float uOn; varying vec2 vUv;
+    ${TAPS}
+    void main(){
+      vec3 space = vec3(0.0);
+      if (uBlurS > 0.05) { for (int i=0;i<TAPS;i++) space += texture2D(tDiffuse, vUv + disk(i)*uBlurS/uRes).rgb; space /= float(TAPS); }
+      else space = texture2D(tDiffuse, vUv).rgb;
+      vec4 ck = vec4(0.0);
+      if (uOn > 0.5) {
+        if (uBlurC > 0.05) { for (int i=0;i<TAPS;i++) ck += texture2D(tCock, vUv + disk(i)*uBlurC/uRes); ck /= float(TAPS); }
+        else ck = texture2D(tCock, vUv);
+      }
+      gl_FragColor = vec4(space * (1.0 - ck.a) + ck.rgb, 1.0);
+    }`,
+});
+cockPass.uniforms.tCock.value = cockRT.texture;
+composer.addPass(cockPass);
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth / 2, innerHeight / 2), 0.7, 0.5, 0.92);
+composer.addPass(bloom);
+const lensPass = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, uWarp: { value: 0 }, uTime: { value: 0 }, uSun: { value: new THREE.Vector2(-9, -9) }, uSunVis: { value: 0 }, uAspect: { value: innerWidth / innerHeight },
+    uFlash: { value: 0 }, uCA: { value: 0.0035 }, uTint: { value: new THREE.Color(0, 0, 0) } },
+  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float uWarp; uniform float uTime; uniform vec2 uSun; uniform float uSunVis; uniform float uAspect; uniform float uFlash; uniform float uCA; uniform vec3 uTint; varying vec2 vUv;
+    float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
+    void main(){
+      vec2 c = vUv - 0.5; float d = length(c * vec2(uAspect, 1.0));
+      vec3 col;
+      if (uWarp > 0.002) {                                   // hyperspace: radial zoom streaks
+        col = vec3(0.0);
+        for (int i=0;i<24;i++){ float s = 1.0 - uWarp*0.55*float(i)/24.0; col += texture2D(tDiffuse, 0.5 + c*s).rgb; }
+        col /= 24.0;
+        col += vec3(0.35,0.7,1.0) * uWarp * 0.25 * smoothstep(0.1, 0.9, d);
+      } else {
+        vec2 off = c * d * uCA;                              // chromatic aberration toward the edges
+        col = vec3(texture2D(tDiffuse, vUv + off).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv - off).b);
+      }
+      if (uSunVis > 0.001) {                                 // lens flare from the sun
+        vec2 sd = (vUv - uSun) * vec2(uAspect, 1.0); float r = length(sd);
+        col += vec3(1.0,0.8,0.55) * uSunVis * (0.35*exp(-r*5.0) + 0.9*exp(-r*28.0));
+        col += vec3(0.5,0.72,1.0) * uSunVis * exp(-abs(sd.y)*160.0) * exp(-abs(sd.x)*1.8) * 0.9;
+        for (int i=1;i<6;i++){
+          vec2 g = 0.5 + (0.5 - uSun) * (float(i)*0.38 - 0.1);
+          vec2 gd = (vUv - g) * vec2(uAspect, 1.0);
+          float s = 0.035 + 0.02*float(i);
+          col += mix(vec3(0.3,0.6,1.0), vec3(1.0,0.5,0.8), float(i)/5.0) * uSunVis * smoothstep(s, s*0.7, length(gd)) * 0.07;
+        }
+      }
+      col += uTint;
+      col *= mix(1.0, smoothstep(1.05, 0.25, d), 0.65);      // vignette
+      col += (hash(vUv*vec2(1733.0, 977.0) + fract(uTime)*37.0) - 0.5) * 0.025;  // film grain
+      col = mix(col, vec3(1.3), uFlash);
+      gl_FragColor = vec4(col, 1.0);
+    }`,
+});
+composer.addPass(lensPass);
+composer.addPass(new OutputPass());
+
+/* =====================================================================
+   Ship state & controls
+   ===================================================================== */
+const ship = {
+  pos: BODIES[0].pos.clone().add(V3(-1400, 900, 6200)),
+  quat: new THREE.Quaternion(),
+  speed: 0, throttle: 0.12, ang: new THREE.Vector3(), boost: 0,
+};
+{ const m = new THREE.Matrix4().lookAt(ship.pos, BODIES[0].pos.clone().add(V3(-2600, -300, 0)), V3(0, 1, 0)); ship.quat.setFromRotationMatrix(m); }
+const input = { mx: 0, my: 0, roll: 0, pitchK: 0, yawK: 0, thrUp: false, thrDown: false, boost: false, stickX: 0, stickY: 0 };
+let flying = false, paused = false, view = 'cockpit', focusNear = false, autopilot = false, jumping = false;
+let targetIdx = 0, shake = 0, time = 0;
+const warpState = { fov: BASE_FOV, warp: 0, shake: 0, flash: 0, charge: 0 };
+
+// Mouse: hold the left button and drag — the offset from where you pressed is a virtual joystick.
+// Releasing re-centres it, so a resting cursor never keeps the ship turning.
+let drag = null;
+canvas.addEventListener('pointerdown', e => {
+  if (e.pointerType !== 'mouse' || e.button !== 0 || !flying || paused) return;
+  drag = { x: e.clientX, y: e.clientY }; canvas.setPointerCapture(e.pointerId);
+  vcur.style.opacity = 0.9; vcur.style.transform = `translate(${e.clientX}px, ${e.clientY}px)`;
+});
+canvas.addEventListener('pointermove', e => {
+  if (!drag) return;
+  const s = Math.min(innerWidth, innerHeight) * 0.22;
+  input.mx = THREE.MathUtils.clamp((e.clientX - drag.x) / s, -1.2, 1.2); input.my = THREE.MathUtils.clamp((e.clientY - drag.y) / s, -1.2, 1.2);
+  vcur.style.transform = `translate(${e.clientX}px, ${e.clientY}px)`;
+});
+const endDrag = () => { drag = null; input.mx = input.my = 0; vcur.style.opacity = 0; };
+canvas.addEventListener('pointerup', endDrag); canvas.addEventListener('pointercancel', endDrag);
+addEventListener('wheel', e => { if (flying) ship.throttle = THREE.MathUtils.clamp(ship.throttle - Math.sign(e.deltaY) * 0.05, 0, 1); }, { passive: true });
+const keys = {};
+addEventListener('keydown', e => {
+  if (!flying) return;
+  const k = e.key.toLowerCase();
+  if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' ', 'tab'].includes(k)) e.preventDefault();
+  if (keys[k]) return; keys[k] = true;
+  if (k === 't' || k === 'tab') cycleTarget(e.shiftKey ? -1 : 1);
+  else if (k === 'j') hyperjump();
+  else if (k === 'c') toggleView();
+  else if (k === 'b') toggleFocus();
+  else if (k === 'f') toggleAuto();
+  else if (k === 'h') $('#hud').classList.toggle('hide');
+  else if (k === 'x') { ship.throttle = 0; status('ALL STOP'); }
+  else if (k === 'escape') togglePause();
+});
+addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
+
+/* touch */
+(() => {
+  const stick = $('#stick'), knob = $('#knob'); let id = null;
+  const upd = e => { const r = stick.getBoundingClientRect(); let x = (e.clientX - r.left - r.width / 2) / (r.width / 2), y = (e.clientY - r.top - r.height / 2) / (r.height / 2);
+    const l = Math.hypot(x, y); if (l > 1) { x /= l; y /= l; } input.stickX = x; input.stickY = y; knob.style.transform = `translate(${x * 38}px, ${y * 38}px)`; };
+  stick.addEventListener('pointerdown', e => { id = e.pointerId; stick.setPointerCapture(id); upd(e); });
+  stick.addEventListener('pointermove', e => { if (e.pointerId === id) upd(e); });
+  const end = () => { id = null; input.stickX = input.stickY = 0; knob.style.transform = ''; };
+  stick.addEventListener('pointerup', end); stick.addEventListener('pointercancel', end);
+  document.querySelectorAll('[data-hold]').forEach(b => {
+    const k = b.dataset.hold;
+    b.addEventListener('pointerdown', e => { e.preventDefault(); input[k] = true; });
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => b.addEventListener(ev, () => { input[k] = false; }));
+  });
+  const acts = { target: () => cycleTarget(1), jump: hyperjump, view: toggleView, focus: toggleFocus, auto: toggleAuto };
+  document.querySelectorAll('[data-tap]').forEach(b => b.addEventListener('click', () => acts[b.dataset.tap]()));
+})();
+
+/* =====================================================================
+   HUD helpers
+   ===================================================================== */
+const vcur = $('#vcur'), bracket = $('#bracket'), arrow = $('#arrow'), lbl = bracket.querySelector('.lbl');
+const hud = { spd: $('#spd'), thrFill: $('#thrFill'), thrTxt: $('#thrTxt'), boost: $('#boostTxt'), near: $('#nearTxt'), warn: $('#warn'),
+  tName: $('#tgtName'), tKind: $('#tgtKind'), tDist: $('#tgtDist'), tEta: $('#tgtEta') };
+const statusEl = $('#status');
+function status(text) { animate(statusEl, { innerHTML: scrambleText({ text, chars: 'A-Z0-9·/' }) }); }
+const targets = BODIES.filter(b => !b.sun || true);
+const tgtList = $('#tgtList');
+tgtList.innerHTML = targets.map((b, i) => `<li><button type="button" data-i="${i}" aria-pressed="${i === 0}">${b.name}</button></li>`).join('');
+tgtList.addEventListener('click', e => { const b = e.target.closest('button'); if (b) setTarget(+b.dataset.i); });
+function setTarget(i) {
+  targetIdx = (i + targets.length) % targets.length;
+  const t = targets[targetIdx];
+  tgtList.querySelectorAll('button').forEach((b, j) => b.setAttribute('aria-pressed', String(j === targetIdx)));
+  animate(hud.tName, { innerHTML: scrambleText({ text: t.name }) });
+  hud.tKind.textContent = t.kind;
+  animate(bracket, { scale: [1.8, 1], opacity: [0, 1], duration: 500, ease: 'outExpo' });
+}
+function cycleTarget(d) { setTarget(targetIdx + d); }
+const fmtDist = d => d >= 1e4 ? (d / 1000).toFixed(1) + 'k km' : Math.round(d).toLocaleString('en') + ' km';
+
+/* =====================================================================
+   Actions
+   ===================================================================== */
+function toggleView() {
+  view = view === 'cockpit' ? 'chase' : 'cockpit';
+  shipModel.visible = view === 'chase';
+  cockPass.uniforms.uOn.value = view === 'cockpit' ? 1 : 0;
+  status(view === 'cockpit' ? 'COCKPIT VIEW' : 'EXTERNAL VIEW');
+}
+function toggleFocus() {
+  focusNear = !focusNear;
+  animate(cockPass.uniforms.uBlurC, { value: focusNear ? 0 : 2.2, duration: 900, ease: 'inOutCubic' });
+  animate(cockPass.uniforms.uBlurS, { value: focusNear ? 5 : 0, duration: 900, ease: 'inOutCubic' });
+  status(focusNear ? 'FOCUS · COCKPIT' : 'FOCUS · INFINITY');
+}
+function toggleAuto() {
+  autopilot = !autopilot;
+  status(autopilot ? 'AUTOPILOT → ' + targets[targetIdx].name : 'MANUAL CONTROL');
+}
+function togglePause() {
+  paused = !paused;
+  $('#intro').style.display = paused ? 'grid' : 'none';
+  $('#startTxt').textContent = 'Resume 繼續駕駛';
+  $('#introLine').textContent = 'PAUSED';
+  document.body.classList.toggle('flying', !paused);
+  if (paused) $('#startBtn').focus();
+}
+function lookQuat(from, to) { return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(from, to, V3(0, 1, 0).applyQuaternion(ship.quat))); }
+
+function hyperjump() {
+  if (jumping || !flying) return;
+  const T = targets[targetIdx];
+  const dist = ship.pos.distanceTo(T.pos) - T.R;
+  const safe = T.R * (T.sun ? 2.2 : T.rings ? 3.4 : 2.6) + (T.station ? 900 : 0);
+  if (dist < safe * 1.6) { status('TOO CLOSE TO ' + T.name + ' FOR A JUMP'); return; }
+  jumping = true; autopilot = false;
+  const start = ship.pos.clone(), startQ = ship.quat.clone();
+  const away = start.clone().sub(T.pos).normalize();
+  const sunward = T.sun ? away : T.pos.clone().negate().normalize();
+  const arriveDir = away.clone().lerp(sunward, 0.55).normalize().add(V3(0, 0.12, 0)).normalize();
+  const arrive = T.pos.clone().addScaledVector(arriveDir, T.R + safe);
+  const w = warpState; w.p = 0; w.align = 0;
+  const arc = $('#chargeArc');
+  ship.jump = { start, startQ, arrive, T, w };
+  status('SPOOLING HYPERDRIVE');
+  const tl = createTimeline({ onComplete: () => { jumping = false; ship.jump = null; ship.speed = 60; ship.throttle = 0.1; status('ARRIVED · ' + T.name); } });
+  tl.add('#chargeRing', { opacity: [0, 1], scale: [1.4, 1], duration: 400, ease: 'outExpo' }, 0)
+    .add(arc, { strokeDashoffset: [427.3, 0], duration: 1700, ease: 'inQuad' }, 0)
+    .add(w, { align: 1, duration: 1700, ease: 'inOutSine' }, 0)
+    .add(w, { shake: reduced ? 0 : 0.5, fov: BASE_FOV - 14, warp: 0.06, duration: 1700, ease: 'inQuad' }, 0)
+    .add('#chargeRing', { opacity: 0, scale: 0.6, duration: 300 }, 1700)
+    .call(() => status('JUMP'), 1700)
+    .add(w, { p: 1, duration: 2600, ease: 'inOutCubic' }, 1750)
+    .add(w, { fov: BASE_FOV + 38, warp: reduced ? 0.2 : 1, duration: 800, ease: 'outCubic' }, 1750)
+    .add(w, { flash: [{ to: reduced ? 0.15 : 0.9, duration: 120 }, { to: 0, duration: 900 }] }, 4200)
+    .add(w, { fov: BASE_FOV, warp: 0, shake: 0, duration: 1300, ease: 'outExpo' }, 4250);
+}
+
+/* =====================================================================
+   Update
+   ===================================================================== */
+const tmpV = new THREE.Vector3(), tmpV2 = new THREE.Vector3(), tmpQ = new THREE.Quaternion(), tmpE = new THREE.Euler();
+const FWD = V3(0, 0, -1), sunScr = new THREE.Vector3(), camFwd = new THREE.Vector3();
+function nearestSurface(p) {
+  let best = Infinity, body = null;
+  for (const b of BODIES) { const d = p.distanceTo(b.pos) - b.R; if (d < best) { best = d; body = b; } }
+  return { d: best, body };
+}
+function updateShip(dt) {
+  if (ship.jump) {
+    const { start, startQ, arrive, T, w } = ship.jump;
+    ship.pos.lerpVectors(start, arrive, w.p);
+    const aimQ = lookQuat(ship.pos, T.pos);
+    ship.quat.slerpQuaternions(startQ, aimQ, w.align);
+    if (w.p > 0) ship.quat.copy(aimQ);
+    ship.speed = (w.p > 0 && w.p < 1) ? start.distanceTo(arrive) / 2.6 : ship.speed;
+    return;
+  }
+  // input → target angular velocity (pitch, yaw, roll) in rad/s
+  let sx = input.stickX, sy = input.stickY;
+  if (!isTouch && !paused) {
+    const l = Math.hypot(input.mx, input.my), dz = 0.05;
+    if (l > dz) { const k = Math.min(1.2, (l - dz) / (1 - dz)); sx = input.mx / l * Math.pow(k, 1.3); sy = input.my / l * Math.pow(k, 1.3); }
+  }
+  sx += (keys['arrowright'] ? 1 : 0) - (keys['arrowleft'] ? 1 : 0);
+  sy += (keys['arrowdown'] ? 1 : 0) - (keys['arrowup'] ? 1 : 0);
+  let roll = (keys['a'] ? 1 : 0) - (keys['d'] ? 1 : 0);
+  const T = targets[targetIdx];
+  if (autopilot) {
+    const dirL = tmpV.copy(T.pos).sub(ship.pos).normalize().applyQuaternion(tmpQ.copy(ship.quat).invert());
+    sx = THREE.MathUtils.clamp(dirL.x * 3, -1, 1); sy = THREE.MathUtils.clamp(-dirL.y * 3, -1, 1);
+    if (dirL.z > 0) sx = 1;                                           // target behind: swing around
+    const gap = ship.pos.distanceTo(T.pos) - T.R, stop = T.R * 1.6 + 400;
+    ship.throttle = dirL.z < -0.9 ? THREE.MathUtils.clamp((gap - stop) / (T.R * 4), 0, 1) : 0.08;
+    if (gap < stop + 50) { autopilot = false; ship.throttle = 0; status('HOLDING AT ' + T.name); }
+  }
+  const tgt = tmpV2.set(-sy * 1.1, -sx * 1.1, roll * 1.5);
+  ship.ang.lerp(tgt, 1 - Math.exp(-dt * 3.5));
+  tmpE.set(ship.ang.x * dt, ship.ang.y * dt, ship.ang.z * dt);
+  ship.quat.multiply(tmpQ.setFromEuler(tmpE)).normalize();
+  // throttle / boost
+  if (keys['w'] || input.thrUp) ship.throttle = Math.min(1, ship.throttle + dt * 0.5);
+  if (keys['s'] || input.thrDown) ship.throttle = Math.max(0, ship.throttle - dt * 0.6);
+  const boosting = keys['shift'] || input.boost;
+  ship.boost += ((boosting ? 1 : 0) - ship.boost) * (1 - Math.exp(-dt * 3));
+  // speed cap shrinks near any surface — this is what makes planet approaches seamless
+  const ns = nearestSurface(ship.pos);
+  const cap = THREE.MathUtils.clamp(ns.d * 0.6, 25, 14000);
+  const targetSpeed = ship.throttle * cap * (1 + ship.boost * 1.8);
+  ship.speed += (targetSpeed - ship.speed) * (1 - Math.exp(-dt * (targetSpeed > ship.speed ? 0.9 : 2.2)));
+  ship.pos.addScaledVector(tmpV.copy(FWD).applyQuaternion(ship.quat), ship.speed * dt);
+  // collisions: push out of bodies
+  for (const b of BODIES) {
+    const min = b.R * (b.sun ? 1.15 : 1.0) + (b.station ? 60 : 12);
+    const d = ship.pos.distanceTo(b.pos);
+    if (d < min) { ship.pos.sub(b.pos).setLength(min).add(b.pos); ship.speed *= 0.3; shake = Math.max(shake, 0.6); if (!ship.hitMsg) { status('PROXIMITY ALERT'); ship.hitMsg = true; setTimeout(() => ship.hitMsg = false, 2000); } }
+  }
+  input.stickVis = { x: sx, y: sy, r: roll };
+}
+
+let chasePos = null;
+function updateCamera(dt) {
+  camera.quaternion.copy(ship.quat);
+  const sh = (shake + warpState.shake) * (reduced ? 0 : 1);
+  if (sh > 0.001) { tmpE.set((Math.random() - 0.5) * 0.012 * sh, (Math.random() - 0.5) * 0.012 * sh, (Math.random() - 0.5) * 0.008 * sh); camera.quaternion.multiply(tmpQ.setFromEuler(tmpE)); }
+  shake *= Math.exp(-dt * 3);
+  if (view === 'chase') {
+    const want = tmpV.set(0, 7, 32).applyQuaternion(ship.quat).add(ship.pos);
+    if (!chasePos) chasePos = want.clone();
+    chasePos.lerp(want, 1 - Math.exp(-dt * 6));
+    camera.position.copy(chasePos);
+    const look = tmpV2.set(0, 2, -30).applyQuaternion(ship.quat).add(ship.pos);
+    camera.up.set(0, 1, 0).applyQuaternion(ship.quat); camera.lookAt(look);
+    shipModel.position.copy(ship.pos); shipModel.quaternion.copy(ship.quat);
+    const pow = 0.25 + ship.throttle * 0.6 + ship.boost * 0.8;
+    flameMats.forEach(m => { m.uniforms.uPow.value = pow; m.uniforms.uT.value = time; });
+  } else { camera.position.copy(ship.pos); chasePos = null; }
+  // FOV: base + speed feel + jump
+  const aspect = innerWidth / innerHeight;
+  const fovBase = aspect < 1 ? THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(78) / 2) / aspect)) : warpState.fov;
+  const fov = Math.min(120, (aspect < 1 ? fovBase + (warpState.fov - BASE_FOV) : warpState.fov) + ship.boost * 8);
+  for (const c of [camera, bgCam, cockCam]) { c.fov = fov; c.aspect = aspect; }
+  const ns = nearestSurface(camera.position);
+  camera.near = THREE.MathUtils.clamp(ns.d * 0.08, 0.5, 60);
+  camera.updateProjectionMatrix(); bgCam.updateProjectionMatrix(); cockCam.updateProjectionMatrix();
+  bgCam.quaternion.copy(camera.quaternion);
+  // cockpit sways against rotation and acceleration — gives parallax against space
+  cockpit.position.set(ship.ang.y * 0.03, -ship.ang.x * 0.025 - (ship.boost * 0.02), ship.boost * 0.04);
+  cockpit.rotation.set(ship.ang.x * 0.01, ship.ang.y * 0.012, -ship.ang.z * 0.03);
+}
+
+let screenAcc = 0, speedHist = new Array(90).fill(0);
+function updateWorld(dt) {
+  time += dt;
+  sunMat.uniforms.uTime.value = time; coronaMat.uniforms.uTime.value = time;
+  corona.quaternion.copy(camera.quaternion);
+  for (const { b, mat } of bodyMats) {
+    b.mesh.rotation.y += b.spin * dt;
+    const dist = camera.position.distanceTo(b.pos) - b.R;
+    mat.uniforms.uDetail.value = THREE.MathUtils.clamp(1 - dist / (b.R * 5), 0, 1);
+    mat.uniforms.uTime.value = time;
+    if (b.cloud) { b.cloud.rotation.y += b.spin * 1.35 * dt; b.cloudMat.uniforms.uDetail.value = mat.uniforms.uDetail.value; }
+  }
+  station.rotateZ(dt * 0.05);
+  const blink = (Math.sin(time * 3) > 0.6) ? 1 : 0.1;
+  station.userData.beacons.forEach(b => b.material.color.setRGB(3 * blink, 0.3 * blink, 0.3 * blink));
+  // dust
+  const box = THREE.MathUtils.clamp(ship.speed * 0.35, 260, 5000), half = box / 2;
+  const streak = THREE.MathUtils.clamp(ship.speed * 0.022, 0.4, box * 0.45) * (1 + warpState.warp * 6);
+  const fwd = tmpV.copy(FWD).applyQuaternion(ship.quat);
+  const cp = camera.position;
+  for (let i = 0; i < DUST; i++) {
+    const p = dustP[i];
+    for (const ax of ['x', 'y', 'z']) { let r = p[ax] - cp[ax]; if (r > half) p[ax] -= box * Math.ceil((r - half) / box); else if (r < -half) p[ax] += box * Math.ceil((-half - r) / box); }
+    dustPos[i * 6] = p.x; dustPos[i * 6 + 1] = p.y; dustPos[i * 6 + 2] = p.z;
+    dustPos[i * 6 + 3] = p.x + fwd.x * streak; dustPos[i * 6 + 4] = p.y + fwd.y * streak; dustPos[i * 6 + 5] = p.z + fwd.z * streak;
+  }
+  dustGeo.attributes.position.needsUpdate = true;
+  dust.material.opacity = view === 'cockpit' ? 0.9 : 0.6;
+  // cockpit details
+  const sv = input.stickVis || { x: 0, y: 0, r: 0 };
+  stickMesh.rotation.set(sv.y * 0.35, 0, -sv.x * 0.35 + sv.r * 0.15);
+  leverMesh.rotation.x = -0.5 + ship.throttle * 1.0;
+  blinkers.forEach(k => { const on = Math.sin(time * k.rate * 3 + k.phase) > -0.2 ? 1 : 0.15; k.m.color.copy(k.base).multiplyScalar(on); });
+  // sunlight inside the cockpit follows the sun's direction relative to the ship (and is blocked by planets)
+  const toSun = tmpV2.copy(camera.position).negate().normalize();
+  let occl = 1;
+  for (const b of BODIES) { if (b.sun || b.station) continue; const oc = tmpV.copy(camera.position).sub(b.pos); const bb = oc.dot(toSun), c = oc.lengthSq() - b.R * b.R; if (bb * bb - c > 0 && bb < 0) { occl = 0; break; } }
+  const sunL = toSun.clone().applyQuaternion(tmpQ.copy(camera.quaternion).invert());
+  cockSun.position.copy(sunL).multiplyScalar(5); cockSun.target.position.set(0, 0, 0);
+  cockSun.intensity += ((occl ? 2.6 : 0.05) - cockSun.intensity) * (1 - Math.exp(-dt * 4));
+  // sun on screen for the lens flare
+  const sp = sunScr.set(0, 0, 0).project(camera);
+  const inFront = tmpV2.set(0, 0, 0).sub(camera.position).dot(camFwd.set(0, 0, -1).applyQuaternion(camera.quaternion)) > 0;
+  const vis = inFront && occl && Math.abs(sp.x) < 1.3 && Math.abs(sp.y) < 1.3 ? 1 - Math.min(1, Math.hypot(sp.x, sp.y) * 0.5) : 0;
+  lensPass.uniforms.uSunVis.value += (vis * 0.9 - lensPass.uniforms.uSunVis.value) * (1 - Math.exp(-dt * 8));
+  lensPass.uniforms.uSun.value.set(sp.x * 0.5 + 0.5, sp.y * 0.5 + 0.5);
+  lensPass.uniforms.uWarp.value = warpState.warp; lensPass.uniforms.uFlash.value = warpState.flash; lensPass.uniforms.uTime.value = time;
+  lensPass.uniforms.uAspect.value = innerWidth / innerHeight;
+  // atmosphere tint when flying low
+  const ns = nearestSurface(camera.position); let tint = 0;
+  if (ns.body && ns.body.halo) { const h = ns.d / (ns.body.R * (ns.body.halo - 1)); tint = THREE.MathUtils.clamp(1 - h, 0, 1); }
+  const tc = ns.body && ns.body.atmo ? ns.body.atmo : [0, 0, 0];
+  lensPass.uniforms.uTint.value.setRGB(tc[0] * tint * 0.05, tc[1] * tint * 0.05, tc[2] * tint * 0.05);
+  stars.material.uniforms.uDim.value = 1 - tint * 0.8;
+  // screens at ~10 fps
+  screenAcc += dt;
+  if (screenAcc > 0.1) { screenAcc = 0; speedHist.push(ship.speed); speedHist.shift(); drawScreens(); }
+}
+
+/* cockpit screens */
+function drawScreens() {
+  const T = targets[targetIdx], d = ship.pos.distanceTo(T.pos) - T.R;
+  // center: target
+  { const { ctx, cv, tex } = screens[0], w = cv.width, h = cv.height;
+    ctx.fillStyle = '#04101f'; ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = 'rgba(111,244,255,.15)'; ctx.lineWidth = 1;
+    for (let x = 0; x < w; x += 32) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+    const cx = w * 0.3, cy = h * 0.55, r = h * 0.3;
+    ctx.strokeStyle = '#6ff4ff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+    for (let i = 0; i < 6; i++) { const a = (time * 0.6 + i / 6 * Math.PI) % Math.PI; ctx.globalAlpha = 0.6; ctx.beginPath(); ctx.ellipse(cx, cy, Math.abs(Math.cos(a)) * r, r, 0, 0, Math.PI * 2); ctx.stroke(); }
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#6ff4ff'; ctx.font = '600 22px monospace'; ctx.fillText('TARGET', w * 0.56, h * 0.25);
+    ctx.fillStyle = '#ffffff'; ctx.font = '700 30px monospace'; ctx.fillText(T.name.slice(0, 12), w * 0.56, h * 0.45);
+    ctx.fillStyle = '#ffb347'; ctx.font = '600 24px monospace'; ctx.fillText(fmtDist(Math.max(0, d)), w * 0.56, h * 0.65);
+    ctx.fillStyle = jumping ? '#ff5ad9' : '#b9ff72'; ctx.font = '600 18px monospace'; ctx.fillText(jumping ? 'HYPERDRIVE' : autopilot ? 'AUTOPILOT' : 'MANUAL', w * 0.56, h * 0.84);
+    tex.needsUpdate = true; }
+  // left: speed graph
+  { const { ctx, cv, tex } = screens[1], w = cv.width, h = cv.height;
+    ctx.fillStyle = '#060c1c'; ctx.fillRect(0, 0, w, h);
+    const mx = Math.max(200, ...speedHist);
+    ctx.strokeStyle = '#ff5ad9'; ctx.lineWidth = 3; ctx.beginPath();
+    speedHist.forEach((v, i) => { const x = i / (speedHist.length - 1) * w, y = h - 20 - v / mx * (h - 70); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.stroke();
+    ctx.fillStyle = '#ffffff'; ctx.font = '700 34px monospace'; ctx.fillText(Math.round(ship.speed).toLocaleString('en'), 16, 42);
+    ctx.fillStyle = '#8fa0c6'; ctx.font = '18px monospace'; ctx.fillText('KM/S · THR ' + Math.round(ship.throttle * 100) + '%', 16, 66);
+    tex.needsUpdate = true; }
+  // right: radar (bodies relative to ship heading)
+  { const { ctx, cv, tex } = screens[2], w = cv.width, h = cv.height, cx = w / 2, cy = h / 2 + 10, R = h * 0.42;
+    ctx.fillStyle = '#04121a'; ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = 'rgba(185,255,114,.35)'; ctx.lineWidth = 1.5;
+    for (const k of [0.35, 0.7, 1]) { ctx.beginPath(); ctx.arc(cx, cy, R * k, 0, Math.PI * 2); ctx.stroke(); }
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(time * 2); ctx.fillStyle = 'rgba(185,255,114,.18)'; ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, R, 0, 0.5); ctx.fill(); ctx.restore();
+    const inv = tmpQ.copy(ship.quat).invert();
+    for (const b of BODIES) {
+      const l = tmpV.copy(b.pos).sub(ship.pos), dd = l.length(); l.applyQuaternion(inv);
+      const rr = Math.log(1 + dd / 1500) / Math.log(1 + 150000 / 1500) * R, a = Math.atan2(l.x, -l.z);
+      ctx.fillStyle = b === T ? '#ffb347' : b.sun ? '#fff1a8' : '#b9ff72';
+      ctx.beginPath(); ctx.arc(cx + Math.sin(a) * rr, cy - Math.cos(a) * rr, b === T ? 7 : 4.5, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.fillStyle = '#b9ff72'; ctx.font = '600 18px monospace'; ctx.fillText('SYSTEM RADAR', 14, 26);
+    tex.needsUpdate = true; }
+}
+
+/* HUD per frame */
+const mapCv = $('#mapCv'), mctx = mapCv.getContext('2d');
+function updateHUD() {
+  hud.spd.textContent = Math.round(ship.speed).toLocaleString('en');
+  hud.thrFill.style.width = (ship.throttle * 100).toFixed(1) + '%';
+  hud.thrTxt.textContent = Math.round(ship.throttle * 100) + '%';
+  hud.boost.textContent = jumping ? 'HYPERSPACE' : ship.boost > 0.5 ? 'BOOST' : 'CRUISE';
+  const ns = nearestSurface(ship.pos);
+  hud.near.textContent = ' ' + ns.body.name + ' · ' + fmtDist(Math.max(0, ns.d));
+  const inAtmo = ns.body.halo && ns.d < ns.body.R * (ns.body.halo - 1);
+  hud.warn.textContent = inAtmo ? '▲ IN ATMOSPHERE' : ns.d < 300 ? '▲ LOW ALTITUDE' : '';
+  const T = targets[targetIdx], td = ship.pos.distanceTo(T.pos) - T.R;
+  hud.tDist.textContent = fmtDist(Math.max(0, td));
+  hud.tEta.textContent = ship.speed > 5 ? '· ETA ' + Math.max(0, Math.round(td / ship.speed)) + ' s' : '';
+  // target bracket / off-screen arrow
+  const p = tmpV.copy(T.pos).project(camera);
+  const behind = tmpV2.copy(T.pos).sub(camera.position).dot(tmpV2.clone().set(0, 0, -1).applyQuaternion(camera.quaternion)) < 0;
+  const W = innerWidth, H = innerHeight;
+  if (!behind && Math.abs(p.x) < 1 && Math.abs(p.y) < 1) {
+    const x = (p.x * 0.5 + 0.5) * W, y = (-p.y * 0.5 + 0.5) * H;
+    const ang = Math.atan(T.R / Math.max(1, camera.position.distanceTo(T.pos)));
+    const px = Math.max(44, Math.min(W, Math.tan(ang) / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * H + 16));
+    bracket.style.display = 'block'; arrow.style.display = 'none';
+    bracket.style.width = bracket.style.height = px + 'px';
+    bracket.style.left = (x - px / 2) + 'px'; bracket.style.top = (y - px / 2) + 'px';
+    lbl.textContent = T.name + ' · ' + fmtDist(Math.max(0, td));
+  } else {
+    bracket.style.display = 'none'; arrow.style.display = 'block';
+    let ax = p.x, ay = p.y; if (behind) { ax = -ax; ay = -ay; }
+    const a = Math.atan2(-ay, ax), rr = Math.min(W, H) * 0.42;
+    arrow.style.transform = `translate(${W / 2 + Math.cos(a) * rr - 9}px, ${H / 2 + Math.sin(a) * rr - 8}px) rotate(${a + Math.PI / 2}rad)`;
+  }
+  // system map (top-down, log-scaled)
+  const w = mapCv.width, c = w / 2, R = w * 0.46;
+  mctx.clearRect(0, 0, w, w);
+  const sc = d => Math.log(1 + d / 3000) / Math.log(1 + 130000 / 3000) * R;
+  mctx.strokeStyle = 'rgba(111,244,255,.12)'; mctx.lineWidth = 2;
+  for (const b of BODIES) { if (b.sun || b.station || b.id === 'selene') continue; const r = sc(Math.hypot(b.pos.x, b.pos.z)); mctx.beginPath(); mctx.arc(c, c, r, 0, Math.PI * 2); mctx.stroke(); }
+  mctx.strokeStyle = 'rgba(200,180,150,.18)'; mctx.lineWidth = 10; mctx.beginPath(); mctx.arc(c, c, sc(42000), 0, Math.PI * 2); mctx.stroke();
+  const pt = v => { const d = Math.hypot(v.x, v.z), r = sc(d), a = Math.atan2(v.z, v.x); return [c + Math.cos(a) * r, c + Math.sin(a) * r]; };
+  for (const b of BODIES) {
+    if (b.station || b.id === 'selene') continue;
+    const [x, y] = pt(b.pos);
+    mctx.fillStyle = b.sun ? '#ffd27a' : b === T ? '#ffb347' : '#9fb4e0';
+    mctx.beginPath(); mctx.arc(x, y, b.sun ? 9 : b === T ? 7 : 5, 0, Math.PI * 2); mctx.fill();
+    mctx.fillStyle = 'rgba(233,241,255,.75)'; mctx.font = '18px monospace'; if (!b.sun) mctx.fillText(b.name.slice(0, 7), x + 9, y + 5);
+  }
+  const [sx, sy] = pt(ship.pos), f = tmpV.copy(FWD).applyQuaternion(ship.quat), ha = Math.atan2(f.z, f.x);
+  mctx.save(); mctx.translate(sx, sy); mctx.rotate(ha); mctx.fillStyle = '#6ff4ff';
+  mctx.beginPath(); mctx.moveTo(12, 0); mctx.lineTo(-7, 7); mctx.lineTo(-3, 0); mctx.lineTo(-7, -7); mctx.fill(); mctx.restore();
+}
+
+/* =====================================================================
+   Render loop
+   ===================================================================== */
+const timer = new THREE.Timer();
+const perf = { t: 0, n: 0 };
+function frame(ts) {
+  timer.update(ts);
+  const raw = timer.getDelta(), dt = Math.min(0.05, raw);
+  // adaptive resolution: aim for ~60 fps, trade pixels for smoothness
+  if (raw < 0.2 && !document.hidden) { perf.t += raw; perf.n++; }   // ignore stalls and background tabs
+  if (perf.t > 1.2 && perf.n > 30) {
+    const ms = perf.t / perf.n * 1000;
+    if (ms > 20 && pr > PR_MIN) { pr = Math.max(PR_MIN, pr * 0.82); applyPR(); }
+    else if (ms < 12.5 && pr < PR_MAX) { pr = Math.min(PR_MAX, pr * 1.08); applyPR(); }
+    perf.t = 0; perf.n = 0;
+  }
+  if (flying && !paused) updateShip(dt);
+  else if (!flying) { tmpE.set(0, dt * 0.01, 0); ship.quat.multiply(tmpQ.setFromEuler(tmpE)); }   // idle drift on the title screen
+  updateCamera(dt);
+  updateWorld(dt);
+  if (flying) updateHUD();
+  if (view === 'cockpit') {
+    renderer.setRenderTarget(cockRT); renderer.setClearColor(0x000000, 0); renderer.clear();
+    renderer.render(cockScene, cockCam);
+    renderer.setRenderTarget(null); renderer.setClearColor(0x000000, 1);
+  }
+  composer.render(dt);
+  requestAnimationFrame(frame);
+}
+
+addEventListener('resize', () => {
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+  applyPR();
+});
+function applyPR() {
+  renderer.setPixelRatio(pr); composer.setPixelRatio(pr); composer.setSize(innerWidth, innerHeight);
+  cockRT.setSize(Math.round(innerWidth * pr), Math.round(innerHeight * pr));
+  cockPass.uniforms.uRes.value.set(innerWidth * pr, innerHeight * pr);
+  stars.material.uniforms.uDpr.value = pr;
+}
+
+/* =====================================================================
+   Boot: warm up shaders, intro sequence
+   ===================================================================== */
+drawScreens();
+renderer.compile(scene, camera); renderer.compile(cockScene, cockCam); renderer.compile(bgScene, bgCam);
+window.__booted = true;
+requestAnimationFrame(frame);
+
+animate('#introLine', { innerHTML: scrambleText({ text: 'STAR CHARTS LOADED · 7 BODIES · CLEAR TO FLY' }) });
+animate('.card > *', { opacity: [0, 1], y: [18, 0], delay: stagger(90), duration: 900, ease: 'outExpo' });
+
+$('#startBtn').addEventListener('click', () => {
+  if (paused) { togglePause(); return; }
+  if (flying) return;
+  flying = true;
+  document.body.classList.add('flying');
+  const tl = createTimeline();
+  tl.add('#intro', { opacity: [1, 0], duration: 700, ease: 'outQuad', onComplete: () => { $('#intro').style.display = 'none'; $('#intro').style.opacity = ''; } }, 0)
+    .add('#hud', { opacity: [0, 1], duration: 600 }, 300)
+    .add(['#nav', '#keys'], { opacity: [0, 1], x: [-30, 0], duration: 900, delay: stagger(120), ease: 'outExpo' }, 400)
+    .add(['#tgtPanel', '#map'], { opacity: [0, 1], x: [30, 0], duration: 900, delay: stagger(120), ease: 'outExpo' }, 450)
+    .add(screens.map(s => s.mat), { opacity: [{ to: 1, duration: 60 }, { to: 0.2, duration: 60 }, { to: 1, duration: 60 }, { to: 0.4, duration: 60 }, { to: 1, duration: 200 }], delay: stagger(180) }, 500)
+    .add('#reticle', { scale: [2.2, 1], opacity: [0, 1], rotate: [90, 0], duration: 1000, ease: 'outExpo' }, 700)
+    .call(() => { status('SYSTEMS ONLINE · ENGINES HOT'); setTarget(0); }, 900);
+});
+</script>
+</body>
+</html>
