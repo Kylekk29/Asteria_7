@@ -1,3 +1,5 @@
+**English** | [简体中文](README.zh-CN.md)
+
 # ASTERIA-7
 
 Three single-file browser experiments around one fictional spaceship, ASTERIA-7. Each is one `.html`
